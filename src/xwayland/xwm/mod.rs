@@ -175,6 +175,7 @@ use x11rb::{
         composite::{ConnectionExt as _, Redirect},
         randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
+        shape::{ConnectionExt as _, SK},
         sync::{ConnectionExt as _, Counter},
         xfixes::ConnectionExt as _,
         xproto::{
@@ -582,6 +583,11 @@ pub trait XwmHandler {
         let _ = xwm;
     }
 
+    /// The window's bounding shape was set or cleared (see [`X11Surface::is_shaped`]).
+    fn shape_changed(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+
     /// WM has lost connection to X server
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
@@ -616,6 +622,8 @@ pub struct X11Wm {
     client_list_stacking: Vec<X11Window>,
 
     is_showing_desktop: bool,
+    /// Whether the X server has the SHAPE extension.
+    shape: bool,
 
     pub(super) focus_release: FocusReleaseHandle,
 
@@ -1011,6 +1019,11 @@ impl X11Wm {
         }
         conn.xfixes_query_version(1, 0)?.reply_unchecked()?; // we just need version 1 for clipboard monitoring
 
+        let shape = conn
+            .query_extension(x11rb::protocol::shape::X11_EXTENSION_NAME.as_bytes())?
+            .reply_unchecked()?
+            .is_some_and(|reply| reply.present);
+
         let clipboard = XWmSelection::new(&conn, &screen, &atoms, atoms.CLIPBOARD)?;
         let primary = XWmSelection::new(&conn, &screen, &atoms, atoms.PRIMARY)?;
         let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
@@ -1044,6 +1057,7 @@ impl X11Wm {
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
             is_showing_desktop: false,
+            shape,
             focus_release,
             span,
         };
@@ -1607,6 +1621,11 @@ where
                 xwm.dnd.xdnd_active.clone(),
             );
             surface.update_properties()?;
+            if xwm.shape {
+                conn.shape_select_input(n.window, true)?;
+                let extents = conn.shape_query_extents(n.window)?.reply_unchecked()?;
+                surface.state.lock().unwrap().shaped = extents.is_some_and(|e| e.bounding_shaped);
+            }
             xwm.windows.push(surface.clone());
 
             drop(_guard);
@@ -1900,6 +1919,24 @@ where
                 {
                     surface.set_wl_surface(state, None);
                 }
+            }
+        }
+        Event::ShapeNotify(n) if n.shape_kind == SK::BOUNDING => {
+            let Some(surface) = xwm
+                .windows
+                .iter()
+                .find(|x| x.window_id() == n.affected_window)
+                .cloned()
+            else {
+                return Ok(());
+            };
+            let changed = {
+                let mut state = surface.state.lock().unwrap();
+                std::mem::replace(&mut state.shaped, n.shaped) != n.shaped
+            };
+            if changed {
+                drop(_guard);
+                state.shape_changed(xwm_id, surface);
             }
         }
         Event::DestroyNotify(n) => {

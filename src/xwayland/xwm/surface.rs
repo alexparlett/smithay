@@ -133,6 +133,8 @@ pub(crate) struct SharedSurfaceState {
     pub(super) mapped_onto: Option<X11Window>,
     pub(super) last_configure: Rectangle<i32, Logical>,
     pub(super) override_redirect: bool,
+    /// The window has a bounding shape (SHAPE extension), so it is not its rectangle.
+    pub(super) shaped: bool,
 
     // The associated wl_surface.
     wl_surface: Option<WlSurface>,
@@ -375,6 +377,7 @@ impl X11Surface {
                 motif_hints: MwmHints::default(),
                 window_type: Vec::new(),
                 opacity: None,
+                shaped: false,
                 opaque_region: None,
                 opaque_region_dirty: true,
                 frame_extents: Default::default(),
@@ -1287,6 +1290,12 @@ impl X11Surface {
             .unwrap()
             .net_state
             .contains(&self.atoms._NET_WM_STATE_DEMANDS_ATTENTION)
+    }
+
+    /// Returns true if the window has a bounding shape set through the SHAPE extension, so
+    /// only part of its rectangle is the window.
+    pub fn is_shaped(&self) -> bool {
+        self.state.lock().unwrap().shaped
     }
 
     /// Returns true if the window is client-side decorated
