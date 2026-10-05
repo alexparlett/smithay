@@ -161,6 +161,7 @@ pub(crate) struct SharedSurfaceState {
     instance: String,
     startup_id: Option<String>,
     pid: Option<u32>,
+    steam_game: Option<u32>,
     protocols: Protocols,
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
@@ -293,6 +294,8 @@ pub enum WmWindowProperty {
     MotifHints,
     StartupId,
     Pid,
+    /// Steam's `STEAM_GAME` app id.
+    SteamGame,
     Opacity,
     FrameExtents,
     /// An unrecognized atom changed; forwarded so the compositor can react to
@@ -369,6 +372,7 @@ impl X11Surface {
                 instance: String::from(""),
                 startup_id: None,
                 pid: None,
+                steam_game: None,
                 protocols: Vec::new(),
                 hints: None,
                 normal_hints: None,
@@ -1292,6 +1296,12 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_DEMANDS_ATTENTION)
     }
 
+    /// The Steam app id Steam tags a game's windows with (`STEAM_GAME`), which gamescope also
+    /// reads; `None` for a window Steam did not start.
+    pub fn steam_game(&self) -> Option<u32> {
+        self.state.lock().unwrap().steam_game
+    }
+
     /// Returns true if the window has a bounding shape set through the SHAPE extension, so
     /// only part of its rectangle is the window.
     pub fn is_shaped(&self) -> bool {
@@ -1552,6 +1562,7 @@ impl X11Surface {
         self.update_motif_hints()?;
         self.update_startup_id()?;
         self.update_pid()?;
+        self.update_steam_game()?;
         self.update_opacity()?;
         if let Some(conn) = self.conn.upgrade() {
             let mut state = self.state.lock().unwrap();
@@ -1608,6 +1619,10 @@ impl X11Surface {
             atom if atom == self.atoms._NET_WM_PID => {
                 self.update_pid()?;
                 Ok(Some(WmWindowProperty::Pid))
+            }
+            atom if atom == self.atoms.STEAM_GAME => {
+                self.update_steam_game()?;
+                Ok(Some(WmWindowProperty::SteamGame))
             }
             atom if atom == self.atoms._NET_WM_WINDOW_OPACITY => {
                 self.update_opacity()?;
@@ -1708,6 +1723,12 @@ impl X11Surface {
             let mut state = self.state.lock().unwrap();
             state.pid = Some(pid);
         }
+        Ok(())
+    }
+
+    fn update_steam_game(&self) -> Result<(), ConnectionError> {
+        let app = self.read_window_property_u32(self.atoms.STEAM_GAME)?;
+        self.state.lock().unwrap().steam_game = app;
         Ok(())
     }
 

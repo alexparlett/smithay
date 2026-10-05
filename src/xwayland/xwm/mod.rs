@@ -250,6 +250,7 @@ mod atoms {
             _MOTIF_WM_HINTS,
             _NET_STARTUP_ID,
             _GTK_FRAME_EXTENTS,
+            STEAM_GAME,
 
             // server -> client
             WM_S0,
