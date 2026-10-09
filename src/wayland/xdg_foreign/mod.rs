@@ -129,4 +129,15 @@ impl XdgForeignState {
     pub fn importer_global(&self) -> GlobalId {
         self.importer.clone()
     }
+
+    /// Returns the surface exported under `handle`, if it is still exported.
+    ///
+    /// A compositor that answers requests naming a window by its exported handle, such as a
+    /// portal backend's `parent_window`, uses this to find the window.
+    pub fn exported_surface(&self, handle: &str) -> Option<&WlSurface> {
+        self.exported
+            .iter()
+            .find(|(h, _)| h.as_str() == handle)
+            .map(|(_, state)| &state.exported_surface)
+    }
 }
