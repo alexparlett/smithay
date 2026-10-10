@@ -1041,6 +1041,9 @@ bitflags::bitflags! {
         const ALLOW_CURSOR_PLANE_SCANOUT = 8;
         /// Return `EmptyFrame`, if only the cursor plane would have been updated
         const SKIP_CURSOR_ONLY_UPDATES = 16;
+        /// Present a frame rendered with [`PresentationMode::Async`] with vsync instead when
+        /// its primary plane holds the swapchain, so only directly scanned out buffers tear
+        const ASYNC_SCANOUT_ONLY = 32;
         /// Allow to realize the frame by assigning elements on any plane
         const ALLOW_SCANOUT = Self::ALLOW_PRIMARY_PLANE_SCANOUT.bits() | Self::ALLOW_OVERLAY_PLANE_SCANOUT.bits() | Self::ALLOW_CURSOR_PLANE_SCANOUT.bits();
         /// Safe default set of flags
@@ -2412,6 +2415,13 @@ where
             }
         }
 
+        let presentation_mode = if frame_flags.contains(FrameFlags::ASYNC_SCANOUT_ONLY)
+            && matches!(primary_plane_element, PrimaryPlaneElement::Swapchain(_))
+        {
+            PresentationMode::VSync
+        } else {
+            presentation_mode
+        };
         let next_frame = PreparedFrame {
             kind: if allow_partial_update {
                 PreparedFrameKind::Partial
